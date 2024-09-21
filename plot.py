@@ -13,7 +13,7 @@ from mpl_toolkits.mplot3d import Axes3D
 # Assuming 'dataset' is already defined
 flatten_states = [step['action'].tolist() for episode in dataset for step in episode]
 X = np.array(flatten_states)
-
+#%%
 # Apply PCA with 3 components
 pca = PCA(n_components=3)
 reduced_data = pca.fit_transform(X)

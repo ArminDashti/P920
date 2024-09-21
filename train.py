@@ -1,12 +1,6 @@
-import pickle
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
-import numpy as np
 from sklearn.model_selection import train_test_split
 import time
-import random
 from tqdm import tqdm
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -26,7 +20,7 @@ def evaluate_model(model, dataloader):
             total_samples += in_dist.size(0)
 
     accuracy = correct_predictions / total_samples
-    return accuracy
+    return accuracy, correct_predictions
 
 
 def train(model, train_dataloader, test_dataloader, loss_fn, optimizer, num_epochs=5, save_dir=r'C:\Users\armin\Documents\GitHub\P920\net.pth'):
@@ -48,8 +42,8 @@ def train(model, train_dataloader, test_dataloader, loss_fn, optimizer, num_epoc
         elapsed_time = time.time() - start_time
         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, Time: {elapsed_time:.2f}s")
 
-        test_accuracy = evaluate_model(model, test_dataloader)
-        print(f"Epoch {epoch+1}/{num_epochs}, Test Accuracy: {test_accuracy:.2f}")
+        test_accuracy, correct_predictions = evaluate_model(model, test_dataloader)
+        print(f"Epoch {epoch+1}/{num_epochs}, Test Accuracy: {test_accuracy}, Correct Predictions: {correct_predictions:,}")
         
     torch.save(model.state_dict(), save_dir)
     return model
