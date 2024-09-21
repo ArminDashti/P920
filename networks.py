@@ -6,15 +6,15 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class state_action_MLP(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=128, final_layer='sigmoid'):
+    def __init__(self, state_dim, action_dim, reward_dim, hidden_dim=128, final_layer='sigmoid'):
         super(state_action_MLP, self).__init__()
-        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
+        self.fc1 = nn.Linear(state_dim + action_dim + state_dim + action_dim , hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, hidden_dim)
         self.fc4 = nn.Linear(hidden_dim, 1)
 
-    def forward(self, state, action):
-        x = torch.cat([state, action], dim=-1)
+    def forward(self, state, action, prev_state, prev_action):
+        x = torch.cat([state, action, prev_state, prev_action], dim=-1)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         x = torch.relu(self.fc3(x))
@@ -22,8 +22,8 @@ class state_action_MLP(nn.Module):
         return torch.sigmoid(x)
     
 
-def create_MLP(state_dim=39, action_dim=28, hidden_dim=128, final_layer='sigmoid', loss_func='BCELoss'):
-    model = state_action_MLP(state_dim, action_dim, hidden_dim=128, final_layer='sigmoid')
+def create_MLP(state_dim=39, action_dim=28, hidden_dim=128, reward_dim = 1, final_layer='sigmoid', loss_func='BCELoss'):
+    model = state_action_MLP(state_dim, action_dim, reward_dim, hidden_dim=128, final_layer='sigmoid')
     model = model.float().to(device)
     loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
