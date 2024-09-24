@@ -6,11 +6,10 @@ import logging
 import os
 import networks
 import numpy as np
-import utils
-import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-from torch.utils.data import DataLoader, TensorDataset
+
 
 
 def evaluate_model(model, dataloader):
@@ -36,8 +35,7 @@ def evaluate_model(model, dataloader):
 logging.basicConfig(
     filename='training_log.txt',
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def train_in_out_dist(model, 
                     train_dataloader, 
@@ -95,9 +93,7 @@ def compute_euclidean_distance(dataset_list):
     return mean
 
 
-import torch
-from tqdm import tqdm
-import logging
+
 
 def train_AC(train_dl,
             test_dl,
@@ -162,30 +158,22 @@ def train_AC(train_dl,
 
 def filter_dataloader(dataloader):
     filtered_batches = []
-
     for batch in dataloader:
-        # Get the in_dist values and check where it's non-zero
         in_dist = batch['in_dist'].float()
         non_zero_indices = in_dist != 0
-
-        # If there are valid entries, keep them
         if non_zero_indices.any():
             filtered_batch = {key: value[non_zero_indices] for key, value in batch.items()}
             filtered_batches.append(filtered_batch)
-
     return filtered_batches
 
-def create_filtered_dataloader(filtered_batches, batch_size):
-    # Convert the filtered_batches back to a DataLoader
-    filtered_dataset = []
 
-    # Flatten the list of batches into a format suitable for a DataLoader
+def create_filtered_dataloader(filtered_batches, batch_size):
+    filtered_dataset = []
     for batch in filtered_batches:
         filtered_dataset.append(batch)
-
-    # Create a DataLoader from the filtered dataset
     filtered_dl = DataLoader(filtered_dataset, batch_size=batch_size, shuffle=True)
     return filtered_dl
+
 
 def train():
     dataset_list, dataset_info = dataset.load_dataset()
@@ -212,7 +200,6 @@ def train():
 
     train_data_filtered = filter_dataloader(train_dl)
     train_dl_filtered = create_filtered_dataloader(train_data_filtered, batch_size=train_dl.batch_size)
-
 
     train_AC(train_dl=train_dl,
              test_dl=test_dl,
