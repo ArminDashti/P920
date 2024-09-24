@@ -43,11 +43,10 @@ def load_dataset():
     return flat_dataset, dataset_info
 
 
-
-
 def append_synthetic_action(dataset, action_dim, number=500000, max_distance=0.25):
     for _ in range(number):
         real_action = None
+        synthetic_action = None
         random_step = random.choice(dataset)
         observation = random_step['observation']
         previous_observation = random_step['previous_observation']
@@ -63,13 +62,13 @@ def append_synthetic_action(dataset, action_dim, number=500000, max_distance=0.2
             synthetic_action = base_action + 0.3 * np.random.randn(*base_action.shape)
             synthetic_action = np.clip(synthetic_action, -1.0, 1.0)
 
-        distance = np.linalg.norm(synthetic_action - previous_action)
-
-        if distance > max_distance:
-            direction = synthetic_action - previous_action
-            normalized_direction = direction / np.linalg.norm(direction)
-            synthetic_action = previous_action + normalized_direction * max_distance
-            synthetic_action = np.clip(synthetic_action, -1.0, 1.0)
+        if synthetic_action is not None:
+            distance = np.linalg.norm(synthetic_action - previous_action)
+            if distance > max_distance:
+                direction = synthetic_action - previous_action
+                normalized_direction = direction / np.linalg.norm(direction)
+                synthetic_action = previous_action + normalized_direction * max_distance
+                synthetic_action = np.clip(synthetic_action, -1.0, 1.0)
 
         if real_action is not None:
             synthetic_action = real_action
