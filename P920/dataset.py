@@ -2,45 +2,64 @@ import pickle
 import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
-from sklearn.model_selection import train_test_split
+import pickle
 import random
+from tqdm import tqdm
+import yaml
+import os
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def load_dataset():
-    with open(r'C:\Users\armin\ubuntu\rl.pkl', 'rb') as file:
+    dataset_path = os.path.join(os.getcwd(), 'assets', 'dataset', 'D4RL_door_expert-v2.pkl')
+    print(f"Loading dataset from \n {dataset_path} \n, please wait ... \n")
+    
+    with open(dataset_path, 'rb') as file:
         dataset = pickle.load(file)
-
+    print(f"Dataset loaded successfully. \n")
+    
+    print(f"Gather dataset information. \n")
     state_dim = len(dataset[0][0]['observation'])
     action_dim = len(dataset[0][0]['action'])
-    print('State Dimension:', state_dim)
-    print('Action Dimension:', action_dim)
 
-    flat_actions = [action for episode in dataset for step in episode for action in step['action']]
+    flat_actions = [action for episode in tqdm(dataset, desc="Processing Actions") 
+                    for step in episode for action in step['action']]
     min_action = min(flat_actions)
     max_action = max(flat_actions)
-    print('Min Action:', min_action)
-    print('Max Action:', max_action)
 
-    flat_rewards = [step['reward'].tolist() for episode in dataset for step in episode]
+    flat_rewards = [step['reward'].tolist() for episode in tqdm(dataset, desc="Processing Rewards") 
+                    for step in episode]
     min_reward = min(flat_rewards)
     max_reward = max(flat_rewards)
-    print('Min Reward:', min_reward)
-    print('Max Reward:', max_reward)
 
     dataset = [[{**step, 'in_dist': 1} for step in episode] for episode in dataset]
+    
     flat_dataset = [step for episode in dataset for step in episode]
     dataset_info = {
-        'state_dim':state_dim,
-        'action_dim':action_dim,
-        'min_action':min_action,
-        'max_action':max_action,
-        'min_reward':min_reward,
-        'max_reward':max_reward,
-        'flat_actions':flat_actions,
-        'flat_rewards':flat_rewards,
+        'state_dim': float(state_dim),
+        'action_dim': float(action_dim),
+        'min_action': float(min_action),
+        'max_action': float(max_action),
+        'min_reward': float(min_reward),
+        'max_reward': float(max_reward),
     }
-    return flat_dataset, dataset_info
+
+    print('Dataset Information: \n', dataset_info, '\n')
+    configs_path = os.path.join(os.getcwd(), 'P920', 'configs.yaml')
+    with open(configs_path, 'r', encoding='utf-8') as file:
+        existing_data = yaml.safe_load(file)
+    existing_data.update(dataset_info)
+    with open(configs_path, 'w') as file:
+        yaml.dump(existing_data, file)
+
+    print('Saving dataset... \n')
+    flattened_dataset_path = os.path.join(os.getcwd(), 'assets', 'list_dict_dataset.pkl')
+    with open(flattened_dataset_path, 'wb') as f:
+        with tqdm(total=len(flat_dataset), desc="Saving", unit="item") as pbar:
+            for item in flat_dataset:
+                pickle.dump(item, f)
+                pbar.update(1)
+    print(f'List-Dict dataset successfully stored at \n {flattened_dataset_path} \n')
 
 
 def append_synthetic_action(dataset, action_dim, number=500000, max_distance=0.25):
@@ -145,3 +164,4 @@ def create_dataloader(dataset, batch_size=256, shuffle=True):
     return DataLoader(custom_dataset, batch_size=batch_size, shuffle=shuffle)
 
 
+load_dataset()
