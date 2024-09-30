@@ -1,7 +1,11 @@
 action_dim: 28.0
+append_data_size: 1000000
+hidden_dim: 128
 max_action: 1.0
+max_distance: 0.25
 max_reward: 20.053872461938894
 min_action: -1.0
 min_reward: -0.4671625922420217
+safe_action_epochs: 5
 state_dim: 39.0
-vvv: 28
+train_split: 0.8

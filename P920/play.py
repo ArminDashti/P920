@@ -2,35 +2,66 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.wrappers import RecordVideo
 import os
+import networks
 import torch
 
 
 def load_models():
-    pass
+    safe_action = networks.SafeAction()
+    state_dict = torch.load(os.path.join(os.getcwd(), 'assets', 'safe_action_model.pth'))
+    safe_action.load_state_dict(state_dict)
+    safe_action.eval()
 
-
-def propose_actions(actor, critic, state, num=5):
-    pass
-
-
-def take_action(env, state, in_out_dist, actor, critic):
-    in_out_dist.eval()
+    actor = networks.Actor()
+    state_dict = torch.load(os.path.join(os.getcwd(), 'assets', 'actor_model.pth'))
+    actor.load_state_dict(state_dict)
     actor.eval()
-    state = torch.from_numpy(state)
+
+    critic = networks.Critic()
+    state_dict = torch.load(os.path.join(os.getcwd(), 'assets', 'critic_model.pth'))
+    critic.load_state_dict(state_dict)
+    critic.eval()
+
+    return safe_action, actor, critic
+
+
+def normalize_vector(vector):
+    min_val = np.min(vector)
+    max_val = np.max(vector)
+    return (vector - min_val) / (max_val - min_val) if max_val != min_val else vector
+
+def propose_actions(safe_action, actor, critic, state, num=5):
+    for i in range(0,2000000):
+        mean, std = actor(state)
+        dist = torch.distributions.Normal(mean, std)
+        action = dist.sample()
+        action = (torch.rand(1, 28) - 0.5) * 2
+        is_safe_action = safe_action(state, action, None, None)
+        is_safe_action = torch.argmax(is_safe_action, dim=1)
+        if is_safe_action:
+            print("Goooooooooooooood")
+            return action
+    return action
+
+def take_action(safe_action, actor, critic, observation):
+    state = torch.from_numpy(observation).float().unsqueeze(0)
     with torch.no_grad():
-        print(state.unsqueeze(0).size())
-        action = actor(state.unsqueeze(0))
-        state_action = torch.cat([state.unsqueeze(0), action], dim=-1)
-        pred_in_out_dist = in_out_dist(state_action)
-        pred_in_out_dist = torch.argmax(pred_in_out_dist, dim=1)
-        if pred_in_out_dist == 1:
+        mean, std = actor(state)
+        dist = torch.distributions.Normal(mean, std)
+        action = dist.sample()
+        is_safe_action = safe_action(state, action, None, None)
+        is_safe_action = torch.argmax(is_safe_action, dim=1)
+        if is_safe_action == 1:
+            print('safe_Action')
             return action.squeeze(0).cpu().numpy()
         else:
-            return pred_in_out_dist
-            proposed = propose_actions(actor, critic, state)
+            print('NOT safe_Action')
+            action = propose_actions(safe_action, actor, critic, state, num=5)
+            return action.squeeze(0).cpu().numpy()
 
 
-def play(in_out_dist, actor, critic):
+def play():
+    safe_action, actor, critic = load_models()
     env = gym.make('AdroitHandDoor-v1', max_episode_steps=400, render_mode='rgb_array')
     video_dir = 'C:\\users\\armin\\v\\'
     os.makedirs(video_dir, exist_ok=True)
@@ -44,7 +75,8 @@ def play(in_out_dist, actor, critic):
     total_reward = 0
     
     for time_step in range(400):
-        action = take_action(env, observation, in_out_dist, actor, critic)
+        observation = normalize_vector(observation)
+        action = take_action(safe_action, actor, critic, observation)
         observation, reward, done, truncated, info = env.step(action)
         total_reward += reward
         

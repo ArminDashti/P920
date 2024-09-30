@@ -1,7 +1,7 @@
-# import dataset
-# import train_safe_action
-# import train_actor_critic
-# import play
+import dataset
+import train_safe_action
+import train_actor_critic
+import play
 import os
 
 
@@ -16,9 +16,14 @@ def clean():
 def train(clean=False):
     if clean:
         clean()
-    train_safe_action.train()
-    train_actor_critic.train()
+    dataset.load_dataset()
+    dataset.append_synthetic_action()
+    train_dl, test_dl = dataset.create_appended_dataloader()
+    train_safe_action.train(train_dl, test_dl)
+    dataloder = dataset.create_non_appended_dataloader()
+    train_actor_critic.train(dataloder)
 
 
-def play():
-    play.play()
+
+train()
+play.play()
