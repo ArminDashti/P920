@@ -35,7 +35,7 @@ def propose_actions(safe_action, actor, critic, state, num=5):
         mean, std = actor(state)
         dist = torch.distributions.Normal(mean, std)
         action = dist.sample()
-        action = (torch.rand(1, 28) - 0.5) * 2
+        # action = (torch.rand(1, 28) - 0.5) * 2
         is_safe_action = safe_action(state, action, None, None)
         is_safe_action = torch.argmax(is_safe_action, dim=1)
         if is_safe_action:
@@ -55,6 +55,7 @@ def take_action(safe_action, actor, critic, observation):
             print('safe_Action')
             return action.squeeze(0).cpu().numpy()
         else:
+            # return action.squeeze(0).cpu().numpy()
             print('NOT safe_Action')
             action = propose_actions(safe_action, actor, critic, state, num=5)
             return action.squeeze(0).cpu().numpy()

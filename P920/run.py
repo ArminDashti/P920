@@ -25,5 +25,6 @@ def train(clean=False):
 
 
 
-train()
-play.play()
+# train()
+# play.play()
+

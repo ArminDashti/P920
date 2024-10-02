@@ -148,7 +148,7 @@ def create_non_appended_dataloader():
     with open(os.path.join(os.getcwd(), 'assets', 'list_dict_dataset.pkl'), 'rb') as file:
         dataset = pickle.load(file)
     dataset = create_torch_dataset(dataset)
-    dataloader = DataLoader(dataset, batch_size=256, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=512, shuffle=True)
     return dataloader
 
 

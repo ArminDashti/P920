@@ -9,6 +9,7 @@ import torch.optim as optim
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+
 def train(dataloder):
     actor_model_dir = os.path.join(os.getcwd(), 'assets', 'actor_model.pth')
     if os.path.exists(actor_model_dir):
@@ -16,7 +17,7 @@ def train(dataloder):
         return
     
     configs = utils.load_configs()
-    num_epochs = 10
+    num_epochs = 30
     actor = networks.Actor()
     critic = networks.Critic()
     actor_optimizer = optim.Adam(actor.parameters(), lr=0.001)
