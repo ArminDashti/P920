@@ -1,3 +1,5 @@
+train_dir: C:\Users\armin\Documents\GitHub\P920
+assets_dir: C:\Users\armin\P920_assets
 action_dim: 28.0
 append_data_size: 1000000
 hidden_dim: 128
@@ -9,3 +11,6 @@ min_reward: -0.4671625922420217
 safe_action_epochs: 5
 state_dim: 39.0
 train_split: 0.8
+actor_lr: 0.001
+critic_lr: 0.001
+ac_num_epochs: 30

@@ -6,19 +6,19 @@ import networks
 import torch
 
 
-def load_models():
-    safe_action = networks.SafeAction()
-    state_dict = torch.load(os.path.join(os.getcwd(), 'assets', 'safe_action_model.pth'))
+def load_models(args):
+    safe_action = networks.SafeAction(args)
+    state_dict = torch.load(os.path.join(args.output_dir, 'state_dicts', 'safe_action_model.pth'))
     safe_action.load_state_dict(state_dict)
     safe_action.eval()
 
-    actor = networks.Actor()
-    state_dict = torch.load(os.path.join(os.getcwd(), 'assets', 'actor_model.pth'))
+    actor = networks.Actor(args)
+    state_dict = torch.load(os.path.join(args.output_dir, 'state_dicts', 'actor_state_dict.pth'))
     actor.load_state_dict(state_dict)
     actor.eval()
 
-    critic = networks.Critic()
-    state_dict = torch.load(os.path.join(os.getcwd(), 'assets', 'critic_model.pth'))
+    critic = networks.Value(args)
+    state_dict = torch.load(os.path.join(args.output_dir, 'state_dicts','value_state_dict.pth'))
     critic.load_state_dict(state_dict)
     critic.eval()
 
@@ -30,8 +30,9 @@ def normalize_vector(vector):
     max_val = np.max(vector)
     return (vector - min_val) / (max_val - min_val) if max_val != min_val else vector
 
+
 def propose_actions(safe_action, actor, critic, state, num=5):
-    for i in range(0,2000000):
+    for i in range(0,50):
         mean, std = actor(state)
         dist = torch.distributions.Normal(mean, std)
         action = dist.sample()
@@ -49,22 +50,22 @@ def take_action(safe_action, actor, critic, observation):
         mean, std = actor(state)
         dist = torch.distributions.Normal(mean, std)
         action = dist.sample()
-        is_safe_action = safe_action(state, action, None, None)
+        is_safe_action = safe_action(state, action)
         is_safe_action = torch.argmax(is_safe_action, dim=1)
         if is_safe_action == 1:
             print('safe_Action')
             return action.squeeze(0).cpu().numpy()
         else:
-            # return action.squeeze(0).cpu().numpy()
+            return action.squeeze(0).cpu().numpy()
             print('NOT safe_Action')
             action = propose_actions(safe_action, actor, critic, state, num=5)
             return action.squeeze(0).cpu().numpy()
 
 
-def play():
-    safe_action, actor, critic = load_models()
+def play(args):
+    safe_action, actor, critic = load_models(args)
     env = gym.make('AdroitHandDoor-v1', max_episode_steps=400, render_mode='rgb_array')
-    video_dir = 'C:\\users\\armin\\v\\'
+    video_dir = os.path.join(args.output_dir, 'videos')
     os.makedirs(video_dir, exist_ok=True)
     env = RecordVideo(
         env,

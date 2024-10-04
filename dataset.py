@@ -144,63 +144,61 @@ def normalize_vector(vector):
 
 
 
-def create_non_appended_dataloader():
-    with open(os.path.join(os.getcwd(), 'assets', 'list_dict_dataset.pkl'), 'rb') as file:
+def create_non_appended_dataloader(args):
+    with open(os.path.join(args.output_dir, 'processed_dataset', 'list_dict_dataset.pkl'), 'rb') as file:
         dataset = pickle.load(file)
     dataset = create_torch_dataset(dataset)
-    dataloader = DataLoader(dataset, batch_size=512, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=1024, shuffle=False, num_workers=0)
     return dataloader
 
 
 def create_appended_dataloader():
-    with open(os.path.join(os.getcwd(), 'assets', 'list_dict_dataset_mixed.pkl'), 'rb') as file:
+    with open(os.path.join(args['output_dir'], 'processed_dataset', 'list_dict_dataset_mixed.pkl'), 'rb') as file:
         dataset = pickle.load(file)
 
     dataset = create_torch_dataset(dataset)
     train_size = int(0.8 * len(dataset)) 
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-    train = DataLoader(train_dataset, batch_size=256, shuffle=True)
+    train = DataLoader(train_dataset, batch_size=256, shuffle=False, num_workers=0)
     test = DataLoader(test_dataset, batch_size=256, shuffle=False)
     return train, test
 
-
-def create_torch_dataset(dataset, batch_size=256, shuffle=True):
-    class CustomDataset(Dataset):
-        def __init__(self, dataset):
-            self.dataset = dataset
+class CustomDataset(Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
         
 
-        def __len__(self):
-            return len(self.dataset)
+    def __len__(self):
+        return len(self.dataset)
     
 
-        def __getitem__(self, idx):
-            data_point = self.dataset[idx]
-            normalized_previous_observation = data_point['previous_observation']
-            normalized_observation = data_point['observation']
-            normalized_next_observation = data_point['next_observation']
-            normalized_reward = data_point['reward']
-            normalized_previous_action = data_point['previous_action']
-            normalized_action = data_point['action']
-            normalized_next_action = data_point['next_action']
+    def __getitem__(self, idx):
+        data_point = self.dataset[idx]
+        normalized_previous_observation = data_point['previous_observation']
+        normalized_observation = data_point['observation']
+        normalized_next_observation = data_point['next_observation']
+        normalized_reward = data_point['reward']
+        normalized_previous_action = data_point['previous_action']
+        normalized_action = data_point['action']
+        normalized_next_action = data_point['next_action']
 
-            return {
-                'previous_observation': normalized_previous_observation,
-                'observation': normalized_observation,
-                'next_observation': normalized_next_observation,
-                'reward': normalized_reward,
-                'previous_action': normalized_previous_action,
-                'action': normalized_action,
-                'next_action': normalized_next_action,
-                'termination': data_point['termination'],
-                'truncation': data_point['truncation'],
-                'info': data_point['info'],
-                'in_dist': data_point['in_dist'],
-            }
-
-    dataset = CustomDataset(dataset)
-    return dataset
+        return {
+            'previous_observation': normalized_previous_observation,
+            'observation': normalized_observation,
+            'next_observation': normalized_next_observation,
+            'reward': normalized_reward,
+            'previous_action': normalized_previous_action,
+            'action': normalized_action,
+            'next_action': normalized_next_action,
+            'termination': data_point['termination'],
+            'truncation': data_point['truncation'],
+            'info': data_point['info'],
+            'in_dist': data_point['in_dist'],
+         }
+        
+def create_torch_dataset(dataset, batch_size=256, shuffle=True):
+    return CustomDataset(dataset)
 
 
 
