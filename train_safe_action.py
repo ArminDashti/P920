@@ -9,14 +9,13 @@ import torch.optim as optim
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def train(train_dataloader, test_dataloader):
-    safe_action_dir = os.path.join(os.getcwd(), 'assets', 'safe_action_model.pth')
-    if os.path.exists(safe_action_dir):
-        print(f"safe_action_model.pth is exists \n")
-        return
+def train(train_dataloader, test_dataloader, args):
+    safe_action_dir = os.path.join(args.output_dir, 'state_dicts', 'safe_action_state_dict.pth')
+    # if os.path.exists(safe_action_dir):
+    #     print(f"safe_action_model.pth is exists \n")
+    #     return
     
-    configs = utils.load_configs()
-    model = networks.SafeAction()
+    model = networks.SafeAction(args)
     loss_func = torch.nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 

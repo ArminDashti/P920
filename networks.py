@@ -11,18 +11,16 @@ class SafeAction(nn.Module):
         super(SafeAction, self).__init__()
         state_dim = args.state_dim
         action_dim = args.action_dim
-        hidden_dim = 128
+        hidden_dim = args.safe_action_hidden_dim
         self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc4 = nn.Linear(hidden_dim, 1)
+        self.fc2 = nn.Linear(hidden_dim, 1)
 
     def forward(self, state, action):
         x = torch.cat([state, action], dim=-1)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        x = torch.relu(self.fc3(x))
-        x = torch.sigmoid(self.fc4(x))
+        x = torch.sigmoid(self.fc3(x))
         return x
 
 

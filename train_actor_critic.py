@@ -5,9 +5,10 @@ import networks
 from tqdm import tqdm
 import os
 import torch.optim as optim
+import torch.nn.functional as F
+from torch.distributions import Normal
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
 
 def train(dataloader, args):
     actor_model_path = os.path.join(os.getcwd(), 'assets', 'actor_model.pth')
@@ -22,6 +23,10 @@ def train(dataloader, args):
     critic = networks.Value(args).to(device)
     actor_optimizer = optim.Adam(actor.parameters(), lr=args.actor_lr)
     critic_optimizer = optim.Adam(critic.parameters(), lr=args.value_lr)
+
+    clip_epsilon = 0.2
+    gamma = 0.99
+    entropy_coef = 0.01
 
     for epoch in range(num_epochs):
         actor.train()
@@ -43,8 +48,14 @@ def train(dataloader, args):
             done_mask = (batch['termination'].float() == 1) | (batch['truncation'].float() == 1)
             done[done_mask] = 1
 
+            # Compute old action distribution
+            with torch.no_grad():
+                old_mean, old_std = actor(state)
+                old_dist = Normal(old_mean, old_std)
+                old_log_prob = old_dist.log_prob(batch['action'].to(device)).sum(dim=-1)
+
             predicted_mean, predicted_std = actor(state)
-            dist = torch.distributions.Normal(predicted_mean, predicted_std)
+            dist = Normal(predicted_mean, predicted_std)
             predicted_action = dist.sample()
             log_prob = dist.log_prob(predicted_action).sum(dim=-1)
 
@@ -52,28 +63,35 @@ def train(dataloader, args):
             next_value = critic(next_state).squeeze()
             next_value = next_value * (1 - done)
 
-            target_value = reward + 0.99 * next_value
-            critic_loss = torch.nn.MSELoss()(value, target_value.detach())
+            target_value = reward + gamma * next_value
+            advantage = (target_value - value).detach()
 
+            # Normalize the advantage to stabilize training
+            advantage = (advantage - advantage.mean()) / (advantage.std() + small_value)
+
+            # Critic loss (value function loss)
+            critic_loss = F.mse_loss(value, target_value.detach())
             critic_optimizer.zero_grad()
             critic_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(critic.parameters(), args.critic_max_norm)
-
             critic_grad_norm += torch.norm(torch.stack([param.grad.norm() for param in critic.parameters() if param.grad is not None])).item()
-
             critic_optimizer.step()
             epoch_critic_loss += critic_loss.item()
 
-            advantage = (target_value - value).detach()
-            weight = torch.exp(advantage / 1)
-            actor_loss = -(log_prob * weight).mean()
+            # Actor loss (policy loss with clipping)
+            ratio = torch.exp(log_prob - old_log_prob.detach())
+            clipped_ratio = torch.clamp(ratio, 1 - clip_epsilon, 1 + clip_epsilon)
+            weighted_advantage = advantage * ratio
+            clipped_weighted_advantage = advantage * clipped_ratio
+            actor_loss = -torch.min(weighted_advantage, clipped_weighted_advantage).mean()
+
+            # Entropy loss to encourage exploration
+            entropy_loss = dist.entropy().mean()
+            actor_loss -= entropy_coef * entropy_loss
 
             actor_optimizer.zero_grad()
             actor_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(actor.parameters(), args.actor_max_norm)
-
+            torch.nn.utils.clip_grad_norm_(actor.parameters(), 0.5)  # Clip gradients to prevent explosion
             actor_grad_norm += torch.norm(torch.stack([param.grad.norm() for param in actor.parameters() if param.grad is not None])).item()
-
             actor_optimizer.step()
             epoch_policy_loss += actor_loss.item()
 

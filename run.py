@@ -19,9 +19,9 @@ def train_model(args):
     # dataset.load_dataset()
     # dataset.append_synthetic_action()
     # train_dl, test_dl = dataset.create_appended_dataloader()
-    # train_safe_action.train(train_dl, test_dl, args)
-    dataloader = dataset.create_non_appended_dataloader(args)
-    train_actor_critic.train(dataloader, args)
+    train_safe_action.train(train_dl, test_dl, args)
+    # dataloader = dataset.create_non_appended_dataloader(args)
+    # train_actor_critic.train(dataloader, args)
 
 
 def main():
