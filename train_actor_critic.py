@@ -22,7 +22,7 @@ def train(dataloader, args):
     actor = networks.Actor(args).to(device)
     critic = networks.Value(args).to(device)
     actor_optimizer = optim.Adam(actor.parameters(), lr=args.actor_lr)
-    critic_optimizer = optim.Adam(critic.parameters(), lr=args.value_lr)
+    critic_optimizer = optim.Adam(critic.parameters(), lr=args.value_lr, weight_decay=0.01)
 
     clip_epsilon = 0.2
     gamma = 0.99
@@ -42,7 +42,7 @@ def train(dataloader, args):
             batch_number += 1
             state = batch['observation'].float().to(device)
             reward = batch['reward'].float().to(device)
-            reward = reward / 20.0
+            reward = reward / (reward.max() + small_value)
             next_state = batch['next_observation'].float().to(device)
             done = torch.zeros_like(reward).to(device)
             done_mask = (batch['termination'].float() == 1) | (batch['truncation'].float() == 1)
@@ -73,6 +73,7 @@ def train(dataloader, args):
             critic_loss = F.mse_loss(value, target_value.detach())
             critic_optimizer.zero_grad()
             critic_loss.backward()
+            # torch.nn.utils.clip_grad_norm_(critic.parameters(), 1.0)
             critic_grad_norm += torch.norm(torch.stack([param.grad.norm() for param in critic.parameters() if param.grad is not None])).item()
             critic_optimizer.step()
             epoch_critic_loss += critic_loss.item()
@@ -90,7 +91,7 @@ def train(dataloader, args):
 
             actor_optimizer.zero_grad()
             actor_loss.backward()
-            torch.nn.utils.clip_grad_norm_(actor.parameters(), 0.5)  # Clip gradients to prevent explosion
+            # torch.nn.utils.clip_grad_norm_(actor.parameters(), 1.0)
             actor_grad_norm += torch.norm(torch.stack([param.grad.norm() for param in actor.parameters() if param.grad is not None])).item()
             actor_optimizer.step()
             epoch_policy_loss += actor_loss.item()

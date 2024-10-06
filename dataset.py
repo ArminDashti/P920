@@ -152,15 +152,15 @@ def create_non_appended_dataloader(args):
     return dataloader
 
 
-def create_appended_dataloader():
-    with open(os.path.join(args['output_dir'], 'processed_dataset', 'list_dict_dataset_mixed.pkl'), 'rb') as file:
+def create_appended_dataloader(args):
+    with open(os.path.join(args.output_dir, 'processed_dataset', 'list_dict_dataset_mixed.pkl'), 'rb') as file:
         dataset = pickle.load(file)
 
     dataset = create_torch_dataset(dataset)
     train_size = int(0.8 * len(dataset)) 
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-    train = DataLoader(train_dataset, batch_size=256, shuffle=False, num_workers=0)
+    train = DataLoader(train_dataset, batch_size=512, shuffle=False, num_workers=0)
     test = DataLoader(test_dataset, batch_size=256, shuffle=False)
     return train, test
 

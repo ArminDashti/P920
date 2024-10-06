@@ -12,15 +12,17 @@ class SafeAction(nn.Module):
         state_dim = args.state_dim
         action_dim = args.action_dim
         hidden_dim = args.safe_action_hidden_dim
-        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, 1)
+        self.latent_state = nn.Linear(state_dim, hidden_dim)
+        self.latent_action = nn.Linear(action_dim, hidden_dim)
+        self.fc1 = nn.Linear(2*hidden_dim, 2*hidden_dim)
+        self.fc2 = nn.Linear(2*hidden_dim, 1)
 
     def forward(self, state, action):
-        x = torch.cat([state, action], dim=-1)
+        latent_state = torch.relu(self.latent_state(state))
+        latent_action = torch.relu(self.latent_action(action))
+        x = torch.cat([latent_state, latent_action], dim=-1)
         x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = torch.sigmoid(self.fc3(x))
+        x = torch.sigmoid(self.fc2(x))
         return x
 
 
@@ -60,3 +62,4 @@ class Value(nn.Module):
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+    

@@ -8,7 +8,7 @@ import torch
 
 def load_models(args):
     safe_action = networks.SafeAction(args)
-    state_dict = torch.load(os.path.join(args.output_dir, 'state_dicts', 'safe_action_model.pth'))
+    state_dict = torch.load(os.path.join(args.output_dir, 'state_dicts', 'safe_action_state_dict.pth'))
     safe_action.load_state_dict(state_dict)
     safe_action.eval()
 
