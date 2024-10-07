@@ -45,7 +45,7 @@ def main():
     parser.add_argument('--train_ac', action='store_true')
     parser.add_argument('--ac_num_epochs', type=int, default=100)
     parser.add_argument('--actor_max_norm', type=float, default=0.0)
-    parser.add_argument('--critic_max_norm', type=int, default=0.0)
+    parser.add_argument('--critic_max_norm', type=float, default=0.0)
     parser.add_argument('--alpha_max_norm', type=float, default=0.0)
     parser.add_argument('--clean', action='store_true', help='Clean assets directory before training')
     

@@ -7,6 +7,7 @@ import os
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Normal
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -42,7 +43,39 @@ def train(dataloader, args):
 
     target_entropy = -torch.prod(torch.tensor(args.action_dim).to(device)).item()
 
-    for epoch in range(num_epochs):
+    # Check for existing checkpoints and resume training if possible
+    checkpoint_dir = os.path.join(args.output_dir, 'check_points')
+    if os.path.exists(checkpoint_dir):
+        checkpoint_folders = [f for f in os.listdir(checkpoint_dir) if f.startswith('epoch_') and os.path.isdir(os.path.join(checkpoint_dir, f))]
+        if checkpoint_folders:
+            latest_epoch_folder = max(checkpoint_folders, key=lambda x: int(x.split('_')[1]))
+            checkpoint_path = os.path.join(checkpoint_dir, latest_epoch_folder, 'checkpoint.pth')
+            if os.path.exists(checkpoint_path):
+                checkpoint = torch.load(checkpoint_path)
+                actor.load_state_dict(checkpoint['actor_state_dict'])
+                critic1.load_state_dict(checkpoint['critic1_state_dict'])
+                critic2.load_state_dict(checkpoint['critic2_state_dict'])
+                actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
+                critic_optimizer.load_state_dict(checkpoint['critic_optimizer_state_dict'])
+                alpha_optimizer.load_state_dict(checkpoint['alpha_optimizer_state_dict'])
+                log_alpha = checkpoint['log_alpha']
+                start_epoch = checkpoint['epoch']
+                print(f"Resuming training from epoch {start_epoch}\n")
+
+                for param_group in actor_optimizer.param_groups:
+                    param_group['lr'] = args.actor_lr
+                for param_group in critic_optimizer.param_groups:
+                    param_group['lr'] = args.value_lr
+                for param_group in alpha_optimizer.param_groups:
+                    param_group['lr'] = args.alpha_lr
+            else:
+                start_epoch = 0
+        else:
+            start_epoch = 0
+    else:
+        start_epoch = 0
+
+    for epoch in range(start_epoch, num_epochs):
         actor.train()
         critic1.train()
         critic2.train()
@@ -178,11 +211,25 @@ def train(dataloader, args):
         if alpha_value >= torch.exp(torch.tensor(5.0)).item() - 1e-2:
             print("Warning: Alpha is approaching the upper bound. Consider adjusting the target entropy or learning rate.")
 
-        state_dicts_dir = os.path.join(args.output_dir, 'state_dicts')
-        os.makedirs(state_dicts_dir, exist_ok=True)
+        checkpoint_dir = os.path.join(args.output_dir, 'check_points', f'epoch_{epoch + 1}')
+        os.makedirs(checkpoint_dir, exist_ok=True)
 
-        torch.save(actor.state_dict(), os.path.join(state_dicts_dir, 'actor_state_dict.pth'))
-        torch.save(critic1.state_dict(), os.path.join(state_dicts_dir, 'value1_state_dict.pth'))
-        torch.save(critic2.state_dict(), os.path.join(state_dicts_dir, 'value2_state_dict.pth'))
+        torch.save(actor.state_dict(), os.path.join(checkpoint_dir, 'actor_state_dict.pth'))
+        torch.save(critic1.state_dict(), os.path.join(checkpoint_dir, 'value1_state_dict.pth'))
+        torch.save(critic2.state_dict(), os.path.join(checkpoint_dir, 'value2_state_dict.pth'))
+        torch.save({
+            'epoch': epoch + 1,
+            'actor_state_dict': actor.state_dict(),
+            'critic1_state_dict': critic1.state_dict(),
+            'critic2_state_dict': critic2.state_dict(),
+            'actor_optimizer_state_dict': actor_optimizer.state_dict(),
+            'critic_optimizer_state_dict': critic_optimizer.state_dict(),
+            'alpha_optimizer_state_dict': alpha_optimizer.state_dict(),
+            'log_alpha': log_alpha,
+        }, os.path.join(checkpoint_dir, 'checkpoint.pth'))
+
+        log_file_path = os.path.join(checkpoint_dir, 'log.txt')
+        with open(log_file_path, 'w') as log_file:
+            log_file.write(log_message + '\n')
 
         play.play(args)
