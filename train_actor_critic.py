@@ -7,8 +7,8 @@ import os
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions import Normal
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 def train(dataloader, args):
     actor_model_path = os.path.join(os.getcwd(), 'assets', 'actor_model.pth')
@@ -16,107 +16,173 @@ def train(dataloader, args):
     if os.path.exists(actor_model_path):
         print(f"actor_model.pth exists at {actor_model_path}\n")
         return
-        
+
     small_value = 1e-3
     num_epochs = args.ac_num_epochs
-    actor = networks.Actor(args).to(device)
-    critic = networks.Value(args).to(device)
-    actor_optimizer = optim.Adam(actor.parameters(), lr=args.actor_lr)
-    critic_optimizer = optim.Adam(critic.parameters(), lr=args.value_lr, weight_decay=0.01)
 
-    clip_epsilon = 0.2
+    actor = networks.Actor(args).to(device)
+    critic1 = networks.Value(args).to(device)
+    critic2 = networks.Value(args).to(device)
+
+    critic1_target = networks.Value(args).to(device)
+    critic2_target = networks.Value(args).to(device)
+    critic1_target.load_state_dict(critic1.state_dict())
+    critic2_target.load_state_dict(critic2.state_dict())
+
+    cql_alpha = getattr(args, 'cql_alpha', 0.1)
+
+    actor_optimizer = optim.Adam(actor.parameters(), lr=1e-4)
+    critic_optimizer = optim.Adam(
+        list(critic1.parameters()) + list(critic2.parameters()), lr=1e-4, weight_decay=1e-5)
+
+    log_alpha = torch.zeros(1, requires_grad=True, device=device)
+    alpha_optimizer = optim.Adam([log_alpha], lr=1e-4)
+
     gamma = 0.99
-    entropy_coef = 0.01
+
+    target_entropy = -torch.prod(torch.tensor(args.action_dim).to(device)).item()
 
     for epoch in range(num_epochs):
         actor.train()
-        critic.train()
+        critic1.train()
+        critic2.train()
 
         actor_grad_norm = 0
         critic_grad_norm = 0
+        alpha_grad_norm = 0
         epoch_policy_loss = 0
         epoch_critic_loss = 0
-        batch_number = 0
 
         for batch in tqdm(dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', mininterval=1.0):
-            batch_number += 1
             state = batch['observation'].float().to(device)
             reward = batch['reward'].float().to(device)
-            reward = reward / (reward.max() + small_value)
+            
+            reward_scale = 1 / 20.0
+            reward = reward * reward_scale
+            
             next_state = batch['next_observation'].float().to(device)
+            action = batch['action'].float().to(device)
             done = torch.zeros_like(reward).to(device)
             done_mask = (batch['termination'].float() == 1) | (batch['truncation'].float() == 1)
             done[done_mask] = 1
 
-            # Compute old action distribution
             with torch.no_grad():
-                old_mean, old_std = actor(state)
-                old_dist = Normal(old_mean, old_std)
-                old_log_prob = old_dist.log_prob(batch['action'].to(device)).sum(dim=-1)
+                next_mean, next_std = actor(next_state)
+                next_std = next_std.clamp(min=1e-6)
+                next_dist = Normal(next_mean, next_std)
+                next_action = next_dist.sample()
+                log_prob_next = next_dist.log_prob(next_action).sum(dim=-1)
+                next_q1 = critic1_target(next_state, next_action).squeeze()
+                next_q2 = critic2_target(next_state, next_action).squeeze()
+                next_q = torch.min(next_q1, next_q2) - log_alpha.exp().detach() * log_prob_next
+                target_value = reward + gamma * next_q * (1 - done)
+
+            q1 = critic1(state, action).squeeze()
+            q2 = critic2(state, action).squeeze()
+            critic_loss = F.mse_loss(q1, target_value.detach()) + F.mse_loss(q2, target_value.detach())
+
+            policy_mean, policy_std = actor(state)
+            policy_std = policy_std.clamp(min=1e-6)
+            policy_dist = Normal(policy_mean, policy_std)
+            policy_actions = policy_dist.sample()
+
+            random_actions = torch.empty_like(action).uniform_(-1, 1).to(device)
+            q1_rand = critic1(state, random_actions)
+            q2_rand = critic2(state, random_actions)
+            q1_policy = critic1(state, policy_actions)
+            q2_policy = critic2(state, policy_actions)
+
+            q1_cat = torch.cat([q1_rand, q1_policy], dim=0)
+            q2_cat = torch.cat([q2_rand, q2_policy], dim=0)
+
+            cql_q1_loss = (torch.logsumexp(q1_cat, dim=0) - q1).mean()
+            cql_q2_loss = (torch.logsumexp(q2_cat, dim=0) - q2).mean()
+            cql_loss = cql_alpha * (cql_q1_loss + cql_q2_loss)
+
+            total_critic_loss = critic_loss + cql_loss
+
+            critic_optimizer.zero_grad()
+            total_critic_loss.backward()
+
+            if args.critic_max_norm != 0.0:
+                critic_grad_norm += torch.nn.utils.clip_grad_norm_(list(critic1.parameters()) + list(critic2.parameters()), args.critic_max_norm).item()
+            else:
+                critic_grad_norm += sum(p.grad.norm().item() for p in list(critic1.parameters()) + list(critic2.parameters()) if p.grad is not None)
+
+            critic_optimizer.step()
+            epoch_critic_loss += total_critic_loss.item()
+
+            tau = 0.005
+            for param, target_param in zip(critic1.parameters(), critic1_target.parameters()):
+                target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+            for param, target_param in zip(critic2.parameters(), critic2_target.parameters()):
+                target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
             predicted_mean, predicted_std = actor(state)
+            predicted_std = predicted_std.clamp(min=1e-6)
             dist = Normal(predicted_mean, predicted_std)
             predicted_action = dist.sample()
             log_prob = dist.log_prob(predicted_action).sum(dim=-1)
+            q1_actor = critic1(state, predicted_action).squeeze()
+            q2_actor = critic2(state, predicted_action).squeeze()
+            q_actor = torch.min(q1_actor, q2_actor)
 
-            value = critic(state).squeeze()
-            next_value = critic(next_state).squeeze()
-            next_value = next_value * (1 - done)
-
-            target_value = reward + gamma * next_value
-            advantage = (target_value - value).detach()
-
-            # Normalize the advantage to stabilize training
-            advantage = (advantage - advantage.mean()) / (advantage.std() + small_value)
-
-            # Critic loss (value function loss)
-            critic_loss = F.mse_loss(value, target_value.detach())
-            critic_optimizer.zero_grad()
-            critic_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(critic.parameters(), 1.0)
-            critic_grad_norm += torch.norm(torch.stack([param.grad.norm() for param in critic.parameters() if param.grad is not None])).item()
-            critic_optimizer.step()
-            epoch_critic_loss += critic_loss.item()
-
-            # Actor loss (policy loss with clipping)
-            ratio = torch.exp(log_prob - old_log_prob.detach())
-            clipped_ratio = torch.clamp(ratio, 1 - clip_epsilon, 1 + clip_epsilon)
-            weighted_advantage = advantage * ratio
-            clipped_weighted_advantage = advantage * clipped_ratio
-            actor_loss = -torch.min(weighted_advantage, clipped_weighted_advantage).mean()
-
-            # Entropy loss to encourage exploration
-            entropy_loss = dist.entropy().mean()
-            actor_loss -= entropy_coef * entropy_loss
+            actor_loss = (log_alpha.exp().detach() * log_prob - q_actor).mean()
 
             actor_optimizer.zero_grad()
             actor_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(actor.parameters(), 1.0)
-            actor_grad_norm += torch.norm(torch.stack([param.grad.norm() for param in actor.parameters() if param.grad is not None])).item()
+
+            if args.actor_max_norm != 0.0:
+                actor_grad_norm += torch.nn.utils.clip_grad_norm_(actor.parameters(), args.actor_max_norm).item()
+            else:
+                actor_grad_norm += sum(p.grad.norm().item() for p in actor.parameters() if p.grad is not None)
+
             actor_optimizer.step()
             epoch_policy_loss += actor_loss.item()
+
+            alpha_loss = -(log_alpha * (log_prob + target_entropy).detach()).mean()
+
+            alpha_optimizer.zero_grad()
+            alpha_loss.backward()
+
+            if args.alpha_max_norm != 0.0:
+                alpha_grad_norm += torch.nn.utils.clip_grad_norm_([log_alpha], args.alpha_max_norm).item()
+            else:
+                alpha_grad_norm += log_alpha.grad.abs().item()
+
+            alpha_optimizer.step()
+
+            log_alpha.data.clamp_(-5.0, 5.0)
 
         avg_policy_loss = epoch_policy_loss / len(dataloader)
         avg_critic_loss = epoch_critic_loss / len(dataloader)
         actor_avg_grad_norm = actor_grad_norm / len(dataloader)
         critic_avg_grad_norm = critic_grad_norm / len(dataloader)
+        alpha_avg_grad_norm = alpha_grad_norm / len(dataloader)
+        alpha_value = log_alpha.exp().item()
 
         log_message = (
             f"Epoch {epoch + 1}/{num_epochs}, "
             f"Actor Loss: {avg_policy_loss:.4f}, "
             f"Critic Loss: {avg_critic_loss:.4f}, "
-            f"Actor Average Gradient Norm: {actor_avg_grad_norm:.4f}, "
-            f"Critic Average Gradient Norm: {critic_avg_grad_norm:.4f}"
+            f"Actor Grad Norm: {actor_avg_grad_norm:.4f}, "
+            f"Critic Grad Norm: {critic_avg_grad_norm:.4f}, "
+            f"Alpha Grad Norm: {alpha_avg_grad_norm:.4f}, "
+            f"Alpha Value: {alpha_value:.4f}"
         )
         print(log_message)
+        print("=" * 30)
 
-        separator = "=" * 30
-        print(separator)
+        if alpha_value <= torch.exp(torch.tensor(-5.0)).item() + 1e-2:
+            print("Warning: Alpha is approaching the lower bound. Consider adjusting the target entropy or learning rate.")
+        if alpha_value >= torch.exp(torch.tensor(5.0)).item() - 1e-2:
+            print("Warning: Alpha is approaching the upper bound. Consider adjusting the target entropy or learning rate.")
 
-        actor_save_path = os.path.join(args.output_dir, 'state_dicts', f'actor_state_dict.pth')
-        torch.save(actor.state_dict(), actor_save_path)
+        state_dicts_dir = os.path.join(args.output_dir, 'state_dicts')
+        os.makedirs(state_dicts_dir, exist_ok=True)
 
-        critic_save_path = os.path.join(args.output_dir, 'state_dicts', f'value_state_dict.pth')
-        torch.save(critic.state_dict(), critic_save_path)
+        torch.save(actor.state_dict(), os.path.join(state_dicts_dir, 'actor_state_dict.pth'))
+        torch.save(critic1.state_dict(), os.path.join(state_dicts_dir, 'value1_state_dict.pth'))
+        torch.save(critic2.state_dict(), os.path.join(state_dicts_dir, 'value2_state_dict.pth'))
 
         play.play(args)

@@ -46,19 +46,22 @@ class Actor(nn.Module):
         log_std = torch.clamp(self.log_std_layer(x), min=-5, max=2)
         std = torch.exp(log_std) + 1e-6
         return mean, std
-
+    
 
 class Value(nn.Module):
     def __init__(self, args):
         super(Value, self).__init__()
         state_dim = args.state_dim
+        action_dim = args.action_dim
         hidden_dim = args.value_hidden_dim
-        self.fc1 = nn.Linear(state_dim, hidden_dim)
+        
+        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, 1)
 
-    def forward(self, state):
-        x = torch.relu(self.fc1(state))
+    def forward(self, state, action):
+        x = torch.cat([state, action], dim=-1)  # Concatenate state and action along the last dimension
+        x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x

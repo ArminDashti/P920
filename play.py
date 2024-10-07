@@ -17,12 +17,12 @@ def load_models(args):
     actor.load_state_dict(state_dict)
     actor.eval()
 
-    critic = networks.Value(args)
-    state_dict = torch.load(os.path.join(args.output_dir, 'state_dicts','value_state_dict.pth'))
-    critic.load_state_dict(state_dict)
-    critic.eval()
+    # critic = networks.Value(args)
+    # state_dict = torch.load(os.path.join(args.output_dir, 'state_dicts','value_state_dict.pth'))
+    # critic.load_state_dict(state_dict)
+    # critic.eval()
 
-    return safe_action, actor, critic
+    return safe_action, actor
 
 
 def normalize_vector(vector):
@@ -44,7 +44,7 @@ def propose_actions(safe_action, actor, critic, state, num=5):
             return action
     return action
 
-def take_action(safe_action, actor, critic, observation):
+def take_action(safe_action, actor, observation):
     state = torch.from_numpy(observation).float().unsqueeze(0)
     with torch.no_grad():
         mean, std = actor(state)
@@ -63,7 +63,7 @@ def take_action(safe_action, actor, critic, observation):
 
 
 def play(args):
-    safe_action, actor, critic = load_models(args)
+    safe_action, actor = load_models(args)
     env = gym.make('AdroitHandDoor-v1', max_episode_steps=400, render_mode='rgb_array')
     video_dir = os.path.join(args.output_dir, 'videos')
     os.makedirs(video_dir, exist_ok=True)
@@ -78,7 +78,7 @@ def play(args):
     
     for time_step in range(400):
         observation = normalize_vector(observation)
-        action = take_action(safe_action, actor, critic, observation)
+        action = take_action(safe_action, actor, observation)
         observation, reward, done, truncated, info = env.step(action)
         total_reward += reward
         
