@@ -6,7 +6,8 @@ import numpy as np
 import pickle
 
 
-def download_dataset(dataset_id='D4RL/door/expert-v2'):
+
+def download(dataset_id='D4RL/door/expert-v2'):
     dataset = minari.load_dataset(dataset_id, True)
     return dataset
 

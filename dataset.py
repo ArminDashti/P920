@@ -6,7 +6,6 @@ import pickle
 import random
 import utils
 from tqdm import tqdm
-import yaml
 import os
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -125,18 +124,6 @@ def append_synthetic_action():
 
 
 
-# def split_dataset(dataset):
-#     in_dist_data = [d for d in dataset if d['in_dist'] == 1]
-#     out_dist_data = [d for d in dataset if d['in_dist'] == 0]
-#     random.shuffle(in_dist_data)
-#     random.shuffle(out_dist_data)
-#     train_in_dist = in_dist_data[:250000]
-#     test_in_dist = out_dist_data[:250000]
-#     train_out_dist = out_dist_data[250000:]
-#     train_data = train_in_dist + train_out_dist
-#     test_data = test_in_dist
-#     return train_data, test_data
-
 def normalize_vector(vector):
     min_val = np.min(vector)
     max_val = np.max(vector)
@@ -148,8 +135,9 @@ def create_non_appended_dataloader(args):
     with open(os.path.join(args.output_dir, 'processed_dataset', 'list_dict_dataset.pkl'), 'rb') as file:
         dataset = pickle.load(file)
     dataset = create_torch_dataset(dataset)
-    dataloader = DataLoader(dataset, batch_size=1024, shuffle=False, num_workers=0)
+    dataloader = DataLoader(dataset, batch_size=1024, shuffle=True, num_workers=0)
     return dataloader
+
 
 
 def create_appended_dataloader(args):
@@ -163,6 +151,8 @@ def create_appended_dataloader(args):
     train = DataLoader(train_dataset, batch_size=512, shuffle=False, num_workers=0)
     test = DataLoader(test_dataset, batch_size=256, shuffle=False)
     return train, test
+
+
 
 class CustomDataset(Dataset):
     def __init__(self, dataset):
