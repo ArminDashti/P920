@@ -1,6 +1,8 @@
 import numpy as np
 import os
 import torch
+import pickle
+from torch.utils.data import TensorDataset
 
 
 
@@ -66,3 +68,27 @@ def get_policy_actions(obs, num_actions, network=None):
     obs_temp = obs.unsqueeze(1).repeat(1, num_actions, 1).view(obs.shape[0] * num_actions, obs.shape[1])
     new_obs_actions, new_obs_log_pi = network.select_action(obs_temp)
     return new_obs_actions, new_obs_log_pi.view(obs.shape[0], num_actions, 1)
+
+
+
+def load_dataset(dataset_path):
+    with open(dataset_path, 'rb') as f:
+        data = pickle.load(f)
+    return TensorDataset(
+        torch.FloatTensor(data['observations']),
+        torch.FloatTensor(data['actions']),
+        torch.FloatTensor(data['rewards']).unsqueeze(1),
+        torch.FloatTensor(data['next_observations']),
+        torch.FloatTensor(data['dones']).unsqueeze(1)
+    )
+
+
+def normalize_rewards(reward_batch):
+    mean_reward = reward_batch.mean()
+    std_reward = reward_batch.std()
+    return (reward_batch - mean_reward) / (std_reward + 1e-8)
+
+
+def soft_update(source_model, target_model, tau):
+    for source_param, target_param in zip(source_model.parameters(), target_model.parameters()):
+        target_param.data.copy_(tau * source_param.data + (1 - tau) * target_param.data)

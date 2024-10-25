@@ -1,24 +1,11 @@
 import argparse
 import dataset
-import train_safe_action
-import train_actor_critic
-import play
-import os
+import safe_action
+import actor_critic
 
-
-
-def clean_assets_directory():
-    folder_path = os.path.join(os.getcwd(), 'assets')
-    for item in os.listdir(folder_path):
-        item_path = os.path.join(folder_path, item)
-        if os.path.isfile(item_path):
-            os.remove(item_path)
 
 
 def train_model(args):
-    # dataset.load_dataset()
-    # dataset.append_synthetic_action()
-    # train_dl, test_dl = dataset.create_appended_dataloader(args)
     # train_safe_action.train(train_dl, test_dl, args)
     dataloader = dataset.create_non_appended_dataloader(args)
     train_actor_critic.train(dataloader, args)
@@ -26,40 +13,34 @@ def train_model(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_path', type=str, default='C:\\Users\\armin\\P920_dataset')
-    parser.add_argument('--output_dir', type=str, default='C:\\Users\\armin\\P920_output')
-    parser.add_argument('--action_dim', type=int, default=28)
-    parser.add_argument('--append_data_size', type=int, default=1000000)
-    parser.add_argument('--safe_action_hidden_dim', type=int, default=128)
-    parser.add_argument('--actor_hidden_dim', type=int, default=128)
-    parser.add_argument('--value_hidden_dim', type=int, default=128)
-    parser.add_argument('--max_distance', type=float, default=0.25)
-    parser.add_argument('--sa_num_epochs', type=int, default=20)
+    parser.add_argument('--outputs_dir', type=str, default='C:\\Users\\armin\\P920_output')
     parser.add_argument('--state_dim', type=int, default=39)
-    parser.add_argument('--train_split', type=float, default=0.8)
-    parser.add_argument('--safe_action_lr', type=float, default=0.001)
-    parser.add_argument('--policy_lr', type=float, default=0.001)
-    parser.add_argument('--qf_lr', type=float, default=0.001)
-    parser.add_argument('--alpha_lr', type=float, default=0.001)
-    parser.add_argument('--train_sa', action='store_true')
-    parser.add_argument('--alpha_tuning', action='store_false', default=False)
-    parser.add_argument('--train_ac', action='store_true')
-    parser.add_argument('--ac_num_epochs', type=int, default=100)
+    parser.add_argument('--action_dim', type=int, default=28)
+    parser.add_argument('--env', type=str, default='None')
+    parser.add_argument('--synthetic_size', type=int, default=1000000)
+    parser.add_argument('--safe_action_train_bs', type=int, default=512)
+    parser.add_argument('--safe_action_test_bs', type=int, default=128)
+    parser.add_argument('--safe_action_hidden_dim', type=int, default=256)
+    parser.add_argument('--safe_action_num_epochs', type=int, default=200)
+    parser.add_argument('--safe_action_lr', type=float, default=0.0001)
+    parser.add_argument('--actor_critic_bs', type=int, default=1024)
+    parser.add_argument('--actor_hidden_dim', type=int, default=128)
+    parser.add_argument('--critic_hidden_dim', type=int, default=128)
+    parser.add_argument('--policy_lr', type=float, default=0.0001)
+    parser.add_argument('--safe_action_weight', type=float, default=0.99)
+    parser.add_argument('--qf_lr', type=float, default=0.0001)
+    parser.add_argument('--actor_critic_nw', type=int, default=0)
+    parser.add_argument('--actor_critic_num_epochs', type=int, default=100)
+    parser.add_argument('--alpha', type=float, default=0.2)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--tau', type=float, default=0.005)
     parser.add_argument('--actor_max_norm', type=float, default=0.0)
-    parser.add_argument('--critic_max_norm', type=float, default=0.0)
-    parser.add_argument('--temp', type=float, default=1.0)
-    parser.add_argument('--reward_scale', type=float, default=1.0)
-    parser.add_argument('--num_random', type=int, default=2)
-    parser.add_argument('--min_q_weight', type=float, default=1.0)
-    parser.add_argument('--alpha_max_norm', type=float, default=0.0)
-    parser.add_argument('--tau', type=float, default=0.01)
-    parser.add_argument('--discount', type=float, default=0.99)
-    parser.add_argument('--clean', action='store_true', help='Clean assets directory before training')
-    
+    parser.add_argument('--critic_max_norm', type=float, default=5.0)
     args = parser.parse_args()
 
-    train_model(args)
-    play.play(args)
+    # dataset.run(args)
+    # safe_action.train(args)
+    actor_critic.run(args)
 
 
 if __name__ == '__main__':

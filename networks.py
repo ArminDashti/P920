@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
-import utils
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -9,23 +8,41 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class SafeAction(nn.Module):
     def __init__(self, args):
         super(SafeAction, self).__init__()
+        # Extract parameters from args
         state_dim = args.state_dim
         action_dim = args.action_dim
         hidden_dim = args.safe_action_hidden_dim
-        self.latent_state = nn.Linear(state_dim, hidden_dim)
-        self.latent_action = nn.Linear(action_dim, hidden_dim)
-        self.fc1 = nn.Linear(2*hidden_dim, 2*hidden_dim)
-        self.fc2 = nn.Linear(2*hidden_dim, 1)
 
+        # Define layers for processing state and action separately
+        self.state_layer = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU()
+        )
+        
+        self.action_layer = nn.Sequential(
+            nn.Linear(action_dim, hidden_dim),
+            nn.ReLU()
+        )
+        
+        # Define combined layers
+        self.combined_layer = nn.Sequential(
+            nn.Linear(hidden_dim + hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+            nn.Sigmoid()
+        )
 
     def forward(self, state, action):
-        latent_state = torch.relu(self.latent_state(state))
-        latent_action = torch.relu(self.latent_action(action))
-        x = torch.cat([latent_state, latent_action], dim=-1)
-        x = torch.relu(self.fc1(x))
-        x = torch.sigmoid(self.fc2(x))
-        return x
+        # Process state and action separately
+        state_processed = self.state_layer(state)
+        action_processed = self.action_layer(action)
 
+        # Concatenate processed state and action
+        combined_input = torch.cat([state_processed, action_processed], dim=-1)
+
+        # Pass through the combined layers
+        output = self.combined_layer(combined_input)
+        return output
 
 
 def initialize_weights(m):
@@ -35,66 +52,103 @@ def initialize_weights(m):
             nn.init.constant_(m.bias, 0)
 
 
+class Actor(nn.Module):
+    def __init__(self, state_dim, action_dim, action_limit=1.0):
+        super().__init__()
+        self.action_limit = action_limit
+        self.net = nn.Sequential(
+            nn.Linear(state_dim, 256),
+            nn.LeakyReLU(),
+            nn.Linear(256, 256),
+            nn.LeakyReLU(),
+        )
+        self.mean = nn.Linear(256, action_dim)
+        self.log_std = nn.Linear(256, action_dim)
 
-class Policy(nn.Module):
-    def __init__(self, args):
-        super(Policy, self).__init__()
-        state_dim = args.state_dim
-        action_dim = args.action_dim
-        hidden_dim = args.actor_hidden_dim
-      
-        self.fc1 = nn.Linear(state_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, hidden_dim)
-      
-        self.mean_layer = nn.Linear(hidden_dim, action_dim)
-        self.log_std_layer = nn.Linear(hidden_dim, action_dim)
-        
-        self.apply(initialize_weights)
+        # Proper initialization
+        self.reset_parameters()
 
+        # Dictionary to store gradient norms for each layer
+        self.grad_norms = {'net_0': [], 'net_2': [], 'mean': [], 'log_std': []}
+
+        # Register hooks to capture gradient norms
+        self.register_hooks()
+
+    def reset_parameters(self):
+        for layer in self.net:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_uniform_(layer.weight, nonlinearity='relu')
+                nn.init.zeros_(layer.bias)
+        nn.init.xavier_uniform_(self.mean.weight)
+        nn.init.zeros_(self.mean.bias)
+        nn.init.xavier_uniform_(self.log_std.weight)
+        nn.init.zeros_(self.log_std.bias)
+
+    def register_hooks(self):
+        def hook_fn(module, grad_input, grad_output, layer_name):
+            # Calculate the gradient norm and store it
+            grad_norm = grad_output[0].norm().item()
+            self.grad_norms[layer_name].append(grad_norm)
+
+        # Register hooks for each linear layer in the network
+        self.net[0].register_backward_hook(lambda m, g_in, g_out: hook_fn(m, g_in, g_out, 'net_0'))
+        self.net[2].register_backward_hook(lambda m, g_in, g_out: hook_fn(m, g_in, g_out, 'net_2'))
+        self.mean.register_backward_hook(lambda m, g_in, g_out: hook_fn(m, g_in, g_out, 'mean'))
+        self.log_std.register_backward_hook(lambda m, g_in, g_out: hook_fn(m, g_in, g_out, 'log_std'))
 
     def forward(self, state):
-        x = torch.relu(self.fc1(state))
-        x = torch.relu(self.fc2(x))
-        x = torch.relu(self.fc3(x))
-        mean = self.mean_layer(x)  # Do not apply tanh here
-        log_std = torch.clamp(self.log_std_layer(x), min=-20, max=2)
+        x = self.net(state)
+        mean = torch.clamp(self.mean(x), -0.5, 0.5)
+        # mean = self.mean(x)
+        # log_std = torch.clamp(self.log_std(x), -10, 10)
+        log_std = torch.nn.functional.softplus(self.log_std(x))
+        # log_std = self.log_std(x).tanh()
+        return mean, log_std
+
+    def sample(self, state):
+        mean, log_std = self(state)
         std = torch.exp(log_std)
-        return mean, std
+        normal = torch.distributions.Normal(mean, std)
+        x_t = normal.rsample()
+        y_t = torch.tanh(x_t)
+        action = y_t * self.action_limit
 
-
-    def select_action(self, state):
-        mean, std = self.forward(state)
-        dist = Normal(mean, std)
-        z = dist.rsample()  # Reparameterized sampling
-        action = torch.tanh(z)  # Apply Tanh to bound actions between -1 and 1
-        log_prob = dist.log_prob(z) - torch.log(1 - action.pow(2) + 1e-6)
-        # log_prob = dist.log_prob(z)
-        log_prob = log_prob.sum(dim=-1, keepdim=True)
+        log_prob = normal.log_prob(x_t) - torch.log(1 - y_t.pow(2) + 1e-6)
+        log_prob = log_prob.sum(1, keepdim=True)
+        # self.plot_grad_norms()
         return action, log_prob
 
+    def plot_grad_norms(self):
+        # Plot all gradient norms on the same figure
+        plt.figure(figsize=(10, 6))
+        for layer_name, norms in self.grad_norms.items():
+            plt.plot(norms, label=f'Grad Norm - {layer_name}')
+        plt.xlabel('Training Step')
+        plt.ylabel('Gradient Norm')
+        plt.title('Gradient Norms During Training for Each Layer')
+        plt.legend()
+        plt.savefig('C:/users/armin/plots/gradient_norms.png')
+        plt.show()
 
+
+
+    
 
 class Critic(nn.Module):
-    def __init__(self, args):
-        super(Critic, self).__init__()
-        state_dim = args.state_dim
-        action_dim = args.action_dim
-        hidden_dim = args.value_hidden_dim
-        
-        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
-        self.ln1 = nn.LayerNorm(hidden_dim)  # Add LayerNorm after the first layer
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.ln2 = nn.LayerNorm(hidden_dim)  # Add LayerNorm after the second layer
-        self.fc3 = nn.Linear(hidden_dim, 1)
-        
-        self.apply(initialize_weights)
+    def __init__(self, state_dim, action_dim):
+        super().__init__()
+        self.q1_net = self._build_q_network(state_dim, action_dim)
+        self.q2_net = self._build_q_network(state_dim, action_dim)
 
+    def _build_q_network(self, state_dim, action_dim):
+        return nn.Sequential(
+            nn.Linear(state_dim + action_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+        )
 
     def forward(self, state, action):
-        x = torch.cat([state, action], dim=-1)  # Concatenate state and action along the last dimension
-        x = torch.relu(self.ln1(self.fc1(x)))  # Apply LayerNorm after fc1
-        x = torch.relu(self.ln2(self.fc2(x)))  # Apply LayerNorm after fc2
-        x = self.fc3(x)
-        return x
-
+        sa = torch.cat([state, action], dim=1)
+        return self.q1_net(sa), self.q2_net(sa)
